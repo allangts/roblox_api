@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import { z } from "zod";
 import OpenAI from "openai";
+import { randomUUID } from "node:crypto";
 
 const app = express();
 app.use(cors());
@@ -32,13 +33,25 @@ const Payload = z.object({
 const MAX_BALAO = 240;
 
 app.post("/npc-chat", async (req, res) => {
+  const reqId = randomUUID().slice(0, 8);
+  const startedAt = Date.now();
   try {
     // Autenticação simples
     const token = req.header("X-Auth-Token");
-    if (!token || token !== process.env.SHARED_TOKEN)
+    if (!token || token !== process.env.SHARED_TOKEN) {
+      console.warn(`[npc-chat][req:${reqId}] unauthorized from ${req.ip}`);
       return res.status(401).json({ error: "unauthorized" });
+    }
 
     const p = Payload.parse(req.body);
+
+    console.log(`[npc-chat][req:${reqId}] in`, {
+      ip: req.ip,
+      npc: p.npc_key,
+      userId: p.user_id,
+      user: p.user_name,
+      text: p.user_text,
+    });
 
     // Opcional: reforçar formato curto no system
     const systemPrefix = `Responda em frases curtas e claras, cada balão ≤ ${MAX_BALAO} caracteres. Evite jargão.`;
@@ -64,9 +77,16 @@ app.post("/npc-chat", async (req, res) => {
     // Opcional: sanitização simples
     const clean = reply.replace(/\s+/g, " ");
 
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[npc-chat][req:${reqId}] out ${elapsedMs}ms`, {
+      replyPreview: clean.slice(0, 200),
+      length: clean.length,
+    });
+
     return res.json({ reply: clean });
   } catch (err) {
-    console.error(err);
+    const elapsedMs = Date.now() - startedAt;
+    console.error(`[npc-chat][req:${reqId}] error ${elapsedMs}ms`, err);
     return res.status(400).json({ error: "bad_request" });
   }
 });
