@@ -148,22 +148,33 @@ app.post("/npc-chat", async (req, res) => {
     // Opcional: sanitização simples
     const clean = reply.replace(/\s+/g, " ");
 
-    // 1. PRIMEIRO: Gerar áudio com ElevenLabs
+    // Verificar se há clientes WebSocket conectados
+    const hasConnectedClients = connectedClients.size > 0;
+
+    // 1. PRIMEIRO: Gerar áudio com ElevenLabs (apenas se houver clientes conectados)
     let audioBuffer = null;
-    try {
-      console.log(`[npc-chat][req:${reqId}] generating audio for: "${clean}"`);
-      audioBuffer = await generateAudio(clean);
-      console.log(`[npc-chat][req:${reqId}] audio generated successfully`);
-    } catch (audioError) {
-      console.error(
-        `[npc-chat][req:${reqId}] audio generation failed:`,
-        audioError
+    if (hasConnectedClients) {
+      try {
+        console.log(
+          `[npc-chat][req:${reqId}] generating audio for: "${clean}"`
+        );
+        audioBuffer = await generateAudio(clean);
+        console.log(`[npc-chat][req:${reqId}] audio generated successfully`);
+      } catch (audioError) {
+        console.error(
+          `[npc-chat][req:${reqId}] audio generation failed:`,
+          audioError
+        );
+        // Continue mesmo se o áudio falhar
+      }
+    } else {
+      console.log(
+        `[npc-chat][req:${reqId}] no WebSocket clients connected, skipping audio generation`
       );
-      // Continue mesmo se o áudio falhar
     }
 
-    // 2. SEGUNDO: Enviar para clientes WebSocket (se houver áudio)
-    if (audioBuffer && connectedClients.size > 0) {
+    // 2. SEGUNDO: Enviar para clientes WebSocket (se houver áudio e clientes)
+    if (audioBuffer && hasConnectedClients) {
       const audioData = {
         type: "audio_message",
         id: reqId,
@@ -180,13 +191,14 @@ app.post("/npc-chat", async (req, res) => {
       );
     }
 
-    // 3. TERCEIRO: Enviar resposta para o Roblox
+    // 3. TERCEIRO: Enviar resposta para o Roblox (imediatamente se não há clientes)
     const elapsedMs = Date.now() - startedAt;
     console.log(`[npc-chat][req:${reqId}] out ${elapsedMs}ms`, {
       replyPreview: clean.slice(0, 200),
       length: clean.length,
       audioGenerated: !!audioBuffer,
       clientsNotified: connectedClients.size,
+      hasConnectedClients: hasConnectedClients,
     });
 
     return res.json({ reply: clean });
@@ -202,10 +214,25 @@ app.get("/audio-status", (req, res) => {
   res.json({
     connected_clients: connectedClients.size,
     status: "active",
+    has_clients: connectedClients.size > 0,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Endpoint para verificar se o servidor está funcionando
+app.get("/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    service: "roblox-npc-api",
+    websocket_clients: connectedClients.size,
+    timestamp: new Date().toISOString(),
   });
 });
 
 const port = process.env.PORT || 3000;
-server.listen(port, () =>
-  console.log(`NPC backend with WebSocket on :${port}`)
-);
+server.listen(port, () => {
+  console.log(`NPC backend with WebSocket on :${port}`);
+  console.log(`WebSocket endpoint: ws://localhost:${port}/audio-stream`);
+  console.log(`Health check: http://localhost:${port}/health`);
+  console.log(`Audio status: http://localhost:${port}/audio-status`);
+});
