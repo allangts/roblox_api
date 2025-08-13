@@ -32,7 +32,7 @@ pm2 delete roblox-npc-api || true
 
 # 6. Iniciar aplicação em produção
 echo "▶️ Iniciando aplicação em produção..."
-pm2 start ecosystem.config.js --env production
+pm2 start ecosystem.config.cjs --env production
 
 # 7. Salvar configuração do PM2
 echo "💾 Salvando configuração do PM2..."
@@ -47,5 +47,5 @@ echo "📊 Status da aplicação:"
 pm2 status
 
 echo "✅ Deploy concluído com sucesso!"
-echo "🌐 Aplicação rodando em: https://api.seudominio.com"
+echo "🌐 Aplicação rodando em: https://robloxapi.essentialcode.com.br"
 echo "📝 Logs disponíveis em: pm2 logs roblox-npc-api" 
