@@ -9,6 +9,21 @@ import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import fetch from "node-fetch";
 
+// Debug: Verificar variáveis de ambiente
+console.log("🔧 Verificando variáveis de ambiente:");
+console.log(
+  "📡 PORT:",
+  process.env.PORT || "não definido (usando padrão 3000)"
+);
+console.log(
+  "🤖 OPENAI_API_KEY:",
+  process.env.OPENAI_API_KEY ? "✅ Configurada" : "❌ Não configurada"
+);
+console.log(
+  "🎵 ELEVEN_LABS_API_KEY:",
+  process.env.ELEVEN_LABS_API_KEY ? "✅ Configurada" : "❌ Não configurada"
+);
+
 const app = express();
 const server = createServer(app);
 
@@ -24,8 +39,8 @@ app.use(express.json({ limit: "1mb" }));
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Configurações ElevenLabs
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel voice
+const ELEVENLABS_API_KEY = process.env.ELEVEN_LABS_API_KEY;
+const VOICE_ID = process.env.ELEVEN_LABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 
 // Clientes WebSocket conectados
 const connectedClients = new Set();
@@ -64,7 +79,7 @@ const generateAudio = async (text) => {
         },
         body: JSON.stringify({
           text: text,
-          model_id: "eleven_monolingual_v1",
+          model_id: process.env.ELEVEN_LABS_MODEL_ID || "eleven_monolingual_v1",
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.5,
@@ -215,6 +230,30 @@ app.get("/audio-status", (req, res) => {
   res.json({
     websocket_clients: connectedClients.size,
     elevenlabs_configured: !!ELEVENLABS_API_KEY,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Debug endpoint para verificar variáveis de ambiente
+app.get("/debug/env", (req, res) => {
+  res.json({
+    port: process.env.PORT || "não definido",
+    openai_configured: !!process.env.OPENAI_API_KEY,
+    elevenlabs_configured: !!process.env.ELEVEN_LABS_API_KEY,
+    openai_key_length: process.env.OPENAI_API_KEY
+      ? process.env.OPENAI_API_KEY.length
+      : 0,
+    elevenlabs_key_length: process.env.ELEVEN_LABS_API_KEY
+      ? process.env.ELEVEN_LABS_API_KEY.length
+      : 0,
+    openai_key_prefix: process.env.OPENAI_API_KEY
+      ? process.env.OPENAI_API_KEY.substring(0, 10) + "..."
+      : "não configurado",
+    elevenlabs_key_prefix: process.env.ELEVEN_LABS_API_KEY
+      ? process.env.ELEVEN_LABS_API_KEY.substring(0, 10) + "..."
+      : "não configurado",
+    voice_id: process.env.ELEVEN_LABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
+    model_id: process.env.ELEVEN_LABS_MODEL_ID || "eleven_monolingual_v1",
     timestamp: new Date().toISOString(),
   });
 });
