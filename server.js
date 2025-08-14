@@ -11,7 +11,12 @@ import fetch from "node-fetch";
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+
+// Configurar WebSocket para path específico
+const wss = new WebSocketServer({
+  server,
+  path: "/audio-stream",
+});
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -90,9 +95,9 @@ const broadcastToClients = (data) => {
   });
 };
 
-// WebSocket connection handler
-wss.on("connection", (ws) => {
-  console.log("Cliente WebSocket conectado");
+// WebSocket connection handler - configurado para path específico
+wss.on("connection", (ws, req) => {
+  console.log(`Cliente WebSocket conectado no path: ${req.url}`);
   connectedClients.add(ws);
 
   ws.on("close", () => {
@@ -108,118 +113,78 @@ wss.on("connection", (ws) => {
 
 app.post("/npc-chat", async (req, res) => {
   const reqId = randomUUID().slice(0, 8);
-  const startedAt = Date.now();
+  console.log(`[${reqId}] Recebendo requisição NPC chat`);
+
   try {
-    // Autenticação simples
-    const token = req.header("X-Auth-Token");
-    if (!token || token !== process.env.SHARED_TOKEN) {
-      console.warn(`[npc-chat][req:${reqId}] unauthorized from ${req.ip}`);
-      return res.status(401).json({ error: "unauthorized" });
-    }
+    const body = Payload.parse(req.body);
+    const { npc_key, npc_name, user_text, messages, max_tokens = 150 } = body;
 
-    const p = Payload.parse(req.body);
+    console.log(`[${reqId}] NPC: ${npc_name}, User: ${user_text}`);
 
-    console.log(`[npc-chat][req:${reqId}] in`, {
-      ip: req.ip,
-      npc: p.npc_key,
-      userId: p.user_id,
-      user: p.user_name,
-      text: p.user_text,
-    });
-
-    // Opcional: reforçar formato curto no system
-    const systemPrefix = `Responda em frases curtas e claras, cada balão ≤ ${MAX_BALAO} caracteres. Evite jargão.`;
-    const messages = [
-      { role: "system", content: systemPrefix + "\n\n" + p.system_message },
-    ];
-
-    for (const m of p.messages) messages.push(m);
-
-    // Chamada ao modelo (pode usar gpt-4o ou o que preferir)
-    const rsp = await openai.chat.completions.create({
+    // Gerar resposta com OpenAI
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      max_tokens: Math.min(p.max_tokens ?? 128, 256),
-      temperature: 0.7,
+      max_tokens: Math.min(max_tokens, MAX_BALAO),
     });
 
-    const reply = rsp.choices?.[0]?.message?.content?.trim() || "...";
-
-    // Opcional: sanitização simples
-    const clean = reply.replace(/\s+/g, " ");
+    const reply =
+      completion.choices[0]?.message?.content?.trim() ||
+      "Desculpe, não consegui responder.";
+    console.log(`[${reqId}] Resposta gerada: ${reply.substring(0, 50)}...`);
 
     // Verificar se há clientes WebSocket conectados
-    const hasConnectedClients = connectedClients.size > 0;
+    if (connectedClients.size > 0) {
+      console.log(
+        `[${reqId}] ${connectedClients.size} clientes WebSocket conectados - gerando áudio`
+      );
 
-    // 1. PRIMEIRO: Gerar áudio com ElevenLabs (apenas se houver clientes conectados)
-    let audioBuffer = null;
-    if (hasConnectedClients) {
       try {
+        // Gerar áudio com ElevenLabs
+        const audioBuffer = await generateAudio(reply);
+        const audioBase64 = audioBuffer.toString("base64");
+
+        // Enviar dados para clientes WebSocket
+        const wsData = {
+          type: "npc_response",
+          id: reqId,
+          npc_name,
+          npc_key,
+          reply,
+          timestamp: new Date().toISOString(),
+          audio_base64: audioBase64,
+        };
+
+        broadcastToClients(wsData);
         console.log(
-          `[npc-chat][req:${reqId}] generating audio for: "${clean}"`
+          `[${reqId}] Áudio enviado para ${connectedClients.size} clientes`
         );
-        audioBuffer = await generateAudio(clean);
-        console.log(`[npc-chat][req:${reqId}] audio generated successfully`);
       } catch (audioError) {
-        console.error(
-          `[npc-chat][req:${reqId}] audio generation failed:`,
-          audioError
-        );
-        // Continue mesmo se o áudio falhar
+        console.error(`[${reqId}] Erro ao gerar áudio:`, audioError);
+        // Enviar apenas texto se áudio falhar
+        const wsData = {
+          type: "npc_response",
+          id: reqId,
+          npc_name,
+          npc_key,
+          reply,
+          timestamp: new Date().toISOString(),
+        };
+        broadcastToClients(wsData);
       }
     } else {
-      console.log(
-        `[npc-chat][req:${reqId}] no WebSocket clients connected, skipping audio generation`
-      );
+      console.log(`[${reqId}] Nenhum cliente WebSocket - pulando áudio`);
     }
 
-    // 2. SEGUNDO: Enviar para clientes WebSocket (se houver áudio e clientes)
-    if (audioBuffer && hasConnectedClients) {
-      const audioData = {
-        type: "audio_message",
-        id: reqId,
-        npc_name: p.npc_name,
-        npc_key: p.npc_key,
-        reply: clean,
-        timestamp: new Date().toISOString(),
-        audio_base64: audioBuffer.toString("base64"),
-      };
-
-      broadcastToClients(audioData);
-      console.log(
-        `[npc-chat][req:${reqId}] audio sent to ${connectedClients.size} clients`
-      );
-    }
-
-    // 3. TERCEIRO: Enviar resposta para o Roblox (imediatamente se não há clientes)
-    const elapsedMs = Date.now() - startedAt;
-    console.log(`[npc-chat][req:${reqId}] out ${elapsedMs}ms`, {
-      replyPreview: clean.slice(0, 200),
-      length: clean.length,
-      audioGenerated: !!audioBuffer,
-      clientsNotified: connectedClients.size,
-      hasConnectedClients: hasConnectedClients,
-    });
-
-    return res.json({ reply: clean });
-  } catch (err) {
-    const elapsedMs = Date.now() - startedAt;
-    console.error(`[npc-chat][req:${reqId}] error ${elapsedMs}ms`, err);
-    return res.status(400).json({ error: "bad_request" });
+    // Retornar resposta para Roblox
+    res.json({ reply });
+  } catch (error) {
+    console.error(`[${reqId}] Erro no chat:`, error);
+    res.status(500).json({ error: "Erro interno do servidor" });
   }
 });
 
-// Endpoint para verificar status dos clientes WebSocket
-app.get("/audio-status", (req, res) => {
-  res.json({
-    connected_clients: connectedClients.size,
-    status: "active",
-    has_clients: connectedClients.size > 0,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Endpoint para verificar se o servidor está funcionando
+// Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
     status: "healthy",
@@ -229,10 +194,23 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Audio status endpoint
+app.get("/audio-status", (req, res) => {
+  res.json({
+    websocket_clients: connectedClients.size,
+    elevenlabs_configured: !!ELEVENLABS_API_KEY,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
-  console.log(`NPC backend with WebSocket on :${port}`);
-  console.log(`WebSocket endpoint: ws://localhost:${port}/audio-stream`);
-  console.log(`Health check: http://localhost:${port}/health`);
-  console.log(`Audio status: http://localhost:${port}/audio-status`);
+  console.log(`🚀 NPC backend with WebSocket on port :${port}`);
+  console.log(
+    `📡 WebSocket endpoint: wss://robloxapi.essentialcode.com.br/audio-stream`
+  );
+  console.log(`🔍 Health check: https://robloxapi.essentialcode.com.br/health`);
+  console.log(
+    `🎵 Audio status: https://robloxapi.essentialcode.com.br/audio-status`
+  );
 });
