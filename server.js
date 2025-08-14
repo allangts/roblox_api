@@ -45,6 +45,206 @@ const VOICE_ID = process.env.ELEVEN_LABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 // Clientes WebSocket conectados
 const connectedClients = new Set();
 
+// Função para detectar números de telefone/WhatsApp na mensagem
+function detectPhoneNumber(message) {
+  console.log(`🔍 [Roblox] Analisando mensagem: ${message}`);
+
+  // Padrões para números de telefone brasileiros
+  const patterns = [
+    /\+55\s*\(?(\d{2})\)?\s*9?\s*\d{4}[-\s]?\d{4}/g, // +55 (11) 99999-9999
+    /\((\d{2})\)\s*9?\s*\d{4}[-\s]?\d{4}/g, // (11) 99999-9999
+    /(\d{2})\s*9?\s*\d{4}[-\s]?\d{4}/g, // 11 99999-9999
+    /(\d{11})/g, // 11999999999
+    /(\d{10})/g, // 1199999999
+  ];
+
+  const foundNumbers = [];
+
+  patterns.forEach((pattern, i) => {
+    console.log(`🔍 [Roblox] Testando padrão ${i + 1}: ${pattern}`);
+    const matches = [...message.matchAll(pattern)];
+
+    for (const match of matches) {
+      console.log(`📞 [Roblox] Match encontrado: ${match[0]}`);
+      // Extrair apenas os dígitos
+      const phone = match[0].replace(/\D/g, "");
+      console.log(`📞 [Roblox] Dígitos extraídos: ${phone}`);
+
+      // Validar se é um número brasileiro válido
+      if (phone.length >= 10) {
+        // Adicionar código do país se não tiver
+        let formattedPhone = phone.startsWith("55") ? phone : "55" + phone;
+        console.log(`📞 [Roblox] Com código do país: ${formattedPhone}`);
+
+        // Gerar variações do número (com e sem o 9)
+        const variations = [];
+
+        if (formattedPhone.length === 12) {
+          // Sem o 9 do celular (55 + DDD + 8 dígitos)
+          console.log(`📞 [Roblox] Número sem 9 detectado: ${formattedPhone}`);
+          const ddd = formattedPhone.slice(2, 4);
+          console.log(`📞 [Roblox] DDD: ${ddd}`);
+
+          const validDDDs = [
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "21",
+            "22",
+            "24",
+            "27",
+            "28",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "37",
+            "38",
+            "41",
+            "42",
+            "43",
+            "44",
+            "45",
+            "46",
+            "47",
+            "48",
+            "49",
+            "51",
+            "53",
+            "54",
+            "55",
+            "61",
+            "62",
+            "63",
+            "64",
+            "65",
+            "66",
+            "67",
+            "68",
+            "69",
+            "71",
+            "73",
+            "74",
+            "75",
+            "77",
+            "79",
+            "81",
+            "82",
+            "83",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "96",
+            "97",
+            "98",
+            "99",
+          ];
+
+          if (validDDDs.includes(ddd)) {
+            // Variação sem 9 (original)
+            variations.push(formattedPhone);
+            console.log(`📞 [Roblox] Variação sem 9: ${formattedPhone}`);
+
+            // Variação com 9
+            const withNine =
+              formattedPhone.slice(0, 4) + "9" + formattedPhone.slice(4);
+            variations.push(withNine);
+            console.log(`📞 [Roblox] Variação com 9: ${withNine}`);
+          }
+        } else if (formattedPhone.length === 13) {
+          // Com o 9 do celular (55 + DDD + 9 + 8 dígitos)
+          console.log(`📞 [Roblox] Número com 9 detectado: ${formattedPhone}`);
+          // Variação com 9 (original)
+          variations.push(formattedPhone);
+          console.log(`📞 [Roblox] Variação com 9: ${formattedPhone}`);
+
+          // Variação sem 9
+          const withoutNine =
+            formattedPhone.slice(0, 4) + formattedPhone.slice(5);
+          variations.push(withoutNine);
+          console.log(`📞 [Roblox] Variação sem 9: ${withoutNine}`);
+        }
+
+        // Adicionar variações únicas
+        for (const variation of variations) {
+          if (!foundNumbers.includes(variation)) {
+            foundNumbers.push(variation);
+            console.log(`✅ [Roblox] Número adicionado: ${variation}`);
+          }
+        }
+      }
+    }
+  });
+
+  console.log(`📱 [Roblox] Números finais encontrados: ${foundNumbers}`);
+  return foundNumbers;
+}
+
+// Função para enviar mensagem WhatsApp
+async function sendWhatsAppNotification(phoneNumber, npcName, npcKey) {
+  try {
+    // URL do serviço WhatsApp (usando variável de ambiente)
+    const whatsappApiUrl =
+      process.env.WHATSAPP_BOT_URL || "http://localhost:3002/send-message";
+
+    // Mensagem de boas-vindas personalizada para o NPC
+    const messageText = `Olá! Sou ${npcName}, do Museu Vivo TJRO no Metaverso Roblox.
+
+É um prazer saber que você tem interesse em continuar nossa conversa! 
+
+Agora você pode me enviar mensagens aqui no WhatsApp a qualquer momento. Responderei com áudio, compartilhando minhas experiências e conhecimentos sobre a história do Tribunal de Justiça de Rondônia.
+
+Seja muito bem-vindo(a) ao nosso canal direto de comunicação!
+
+🎮 Museu Vivo TJRO - Metaverso`;
+
+    const payload = {
+      phone: phoneNumber,
+      message: messageText,
+      founder_name: npcName,
+      founder_title: `NPC do Metaverso - ${npcKey}`,
+    };
+
+    console.log(`📤 [Roblox] Enviando WhatsApp para ${phoneNumber}...`);
+
+    // Enviar requisição para o bot do WhatsApp
+    const response = await fetch(whatsappApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      timeout: 10000,
+    });
+
+    if (response.ok) {
+      console.log(`✅ [Roblox] Mensagem WhatsApp enviada para ${phoneNumber}`);
+      return true;
+    } else {
+      console.log(`❌ [Roblox] Erro ao enviar WhatsApp: ${response.status}`);
+      return false;
+    }
+  } catch (error) {
+    console.log(`❌ [Roblox] Erro ao enviar notificação WhatsApp: ${error}`);
+    return false;
+  }
+}
+
 // Validação básica do payload
 const Payload = z.object({
   npc_key: z.string(),
@@ -152,10 +352,37 @@ app.post("/npc-chat", async (req, res) => {
 
     console.log(`[${reqId}] NPC: ${npc_name}, User: ${user_text}`);
 
+    // Detectar números de WhatsApp na mensagem do usuário ANTES de gerar resposta
+    const phoneNumbers = detectPhoneNumber(user_text);
+
+    // Preparar mensagens com contexto especial se WhatsApp foi detectado
+    let messagesToSend = [...messages];
+
+    if (phoneNumbers.length > 0) {
+      console.log(
+        `📱 [Roblox] Números de WhatsApp detectados: ${phoneNumbers}`
+      );
+
+      // Adicionar contexto especial sobre WhatsApp
+      const whatsappContext = `
+      ATENÇÃO: O usuário forneceu ${
+        phoneNumbers.length
+      } número(s) de WhatsApp: ${phoneNumbers.join(", ")}. 
+      Responda agradecendo pelos números e informando que você enviará 
+      mensagens de boas-vindas no WhatsApp deles. Seja cordial e 
+      explique que agora vocês podem conversar por lá também.
+      `;
+
+      messagesToSend.push({
+        role: "system",
+        content: whatsappContext,
+      });
+    }
+
     // Gerar resposta com OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages,
+      messages: messagesToSend,
       max_tokens: Math.min(max_tokens, MAX_BALAO),
     });
 
@@ -163,6 +390,24 @@ app.post("/npc-chat", async (req, res) => {
       completion.choices[0]?.message?.content?.trim() ||
       "Desculpe, não consegui responder.";
     console.log(`[${reqId}] Resposta gerada: ${reply.substring(0, 50)}...`);
+
+    // Enviar mensagens WhatsApp se números foram detectados
+    let whatsappSent = false;
+
+    if (phoneNumbers.length > 0) {
+      for (const number of phoneNumbers) {
+        whatsappSent = await sendWhatsAppNotification(
+          number,
+          npc_name,
+          npc_key
+        );
+        if (whatsappSent) {
+          console.log(`✅ [Roblox] WhatsApp enviado para ${number}`);
+        } else {
+          console.log(`❌ [Roblox] Falha ao enviar WhatsApp para ${number}`);
+        }
+      }
+    }
 
     // Verificar se há clientes WebSocket conectados
     if (connectedClients.size > 0) {
