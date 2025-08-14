@@ -87,18 +87,34 @@ const generateAudio = async (text) => {
 
 // Função para enviar mensagem para todos os clientes WebSocket
 const broadcastToClients = (data) => {
+  const message = JSON.stringify(data);
+  let sentCount = 0;
+
   connectedClients.forEach((client) => {
     if (client.readyState === 1) {
       // WebSocket.OPEN
-      client.send(JSON.stringify(data));
+      client.send(message);
+      sentCount++;
     }
   });
+
+  console.log(`📡 Mensagem enviada para ${sentCount} clientes`);
 };
 
 // WebSocket connection handler - configurado para path específico
 wss.on("connection", (ws, req) => {
   console.log(`Cliente WebSocket conectado no path: ${req.url}`);
   connectedClients.add(ws);
+
+  // Enviar mensagem de boas-vindas apenas para este cliente
+  ws.send(
+    JSON.stringify({
+      type: "connection_success",
+      message: "Conectado ao Audio Player do Metaverso",
+      timestamp: new Date().toISOString(),
+      client_id: Math.random().toString(36).substr(2, 9),
+    })
+  );
 
   ws.on("close", () => {
     console.log("Cliente WebSocket desconectado");
