@@ -188,7 +188,7 @@ app.post("/npc-chat", async (req, res) => {
 
         broadcastToClients(wsData);
         console.log(
-          `[${reqId}] Áudio enviado para ${connectedClients.size} clientes`
+          `[${reqId}] Áudio enviado para ${connectedClients.size} clientes - Tipo: ${wsData.type}, Audio bytes: ${audioBase64.length}`
         );
       } catch (audioError) {
         console.error(`[${reqId}] Erro ao gerar áudio:`, audioError);
