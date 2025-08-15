@@ -2,6 +2,49 @@
 
 API para chat com NPCs usando OpenAI GPT-4.
 
+## 📱 Integração WhatsApp
+
+### Funcionalidade Implementada
+
+Quando um usuário no Roblox envia seu número de WhatsApp durante uma conversa com um NPC, o sistema automaticamente:
+
+1. **Detecta o número** usando expressões regulares
+2. **Envia uma mensagem de texto** via WhatsApp
+3. **Envia uma mensagem de áudio** de boas-vindas do NPC
+4. **Responde no chat do Roblox** agradecendo pelo número
+
+### Formatos de Números Suportados
+
+O sistema detecta os seguintes formatos de números brasileiros:
+
+- `+55 (11) 99999-9999`
+- `(11) 99999-9999`
+- `11 99999-9999`
+- `11999999999`
+- `1199999999`
+
+### Configuração Necessária
+
+1. **WhatsApp Bot funcionando** na porta 3002 (ou configurada em `WHATSAPP_API_URL`)
+2. **Variável de ambiente** `WHATSAPP_API_URL` configurada
+3. **Bot WhatsApp conectado** e operacional
+
+### Fluxo da Integração
+
+```
+Usuário envia número no Roblox
+           ↓
+API Roblox detecta o número
+           ↓
+API envia requisição HTTP para WhatsApp Bot
+           ↓
+WhatsApp Bot envia mensagem de texto
+           ↓
+WhatsApp Bot gera e envia áudio
+           ↓
+NPC confirma no chat do Roblox
+```
+
 ## 🚀 Deploy em Produção
 
 ### Pré-requisitos
@@ -44,6 +87,9 @@ Adicione as seguintes variáveis:
 
 ```env
 OPENAI_API_KEY=sua_chave_openai_aqui
+ELEVENLABS_API_KEY=sua_chave_elevenlabs_aqui
+ELEVEN_LABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+WHATSAPP_API_URL=http://localhost:3002
 SHARED_TOKEN=seu_token_secreto_aqui
 NODE_ENV=production
 PORT=3000

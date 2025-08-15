@@ -23,6 +23,10 @@ console.log(
   "🎵 ELEVEN_LABS_API_KEY:",
   process.env.ELEVEN_LABS_API_KEY ? "✅ Configurada" : "❌ Não configurada"
 );
+console.log(
+  "📱 WHATSAPP_API_URL:",
+  process.env.WHATSAPP_API_URL || "http://localhost:3002"
+);
 
 const app = express();
 const server = createServer(app);
@@ -41,6 +45,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Configurações ElevenLabs
 const ELEVENLABS_API_KEY = process.env.ELEVEN_LABS_API_KEY;
 const VOICE_ID = process.env.ELEVEN_LABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+
+// Configuração WhatsApp
+const WHATSAPP_API_URL =
+  process.env.WHATSAPP_API_URL || "http://localhost:3002";
 
 // Clientes WebSocket conectados
 const connectedClients = new Set();
@@ -142,6 +150,202 @@ wss.on("connection", (ws, req) => {
   });
 });
 
+// Função para detectar números de WhatsApp na mensagem
+function detectPhoneNumber(message) {
+  console.log(`🔍 Analisando mensagem para WhatsApp: ${message}`);
+
+  // Padrões para números de telefone brasileiros
+  const patterns = [
+    /\+55\s*\(?(\d{2})\)?\s*9?\s*\d{4}[-\s]?\d{4}/g, // +55 (11) 99999-9999
+    /\((\d{2})\)\s*9?\s*\d{4}[-\s]?\d{4}/g, // (11) 99999-9999
+    /(\d{2})\s*9?\s*\d{4}[-\s]?\d{4}/g, // 11 99999-9999
+    /(\d{11})/g, // 11999999999
+    /(\d{10})/g, // 1199999999
+  ];
+
+  const foundNumbers = [];
+
+  patterns.forEach((pattern, index) => {
+    console.log(`🔍 Testando padrão ${index + 1}: ${pattern}`);
+    const matches = [...message.matchAll(pattern)];
+
+    matches.forEach((match) => {
+      console.log(`📞 Match encontrado: ${match[0]}`);
+      // Extrair apenas os dígitos
+      let phone = match[0].replace(/\D/g, "");
+      console.log(`📞 Dígitos extraídos: ${phone}`);
+
+      // Validar se é um número brasileiro válido
+      if (phone.length >= 10) {
+        // Adicionar código do país se não tiver
+        if (!phone.startsWith("55")) {
+          phone = "55" + phone;
+          console.log(`📞 Com código do país: ${phone}`);
+        }
+
+        // Gerar variações do número (com e sem o 9)
+        const variations = [];
+
+        if (phone.length === 12) {
+          // Sem o 9 do celular (55 + DDD + 8 dígitos)
+          console.log(`📞 Número sem 9 detectado: ${phone}`);
+          // Adicionar o 9 do celular se o DDD for válido
+          const ddd = phone.slice(2, 4);
+          console.log(`📞 DDD: ${ddd}`);
+
+          const validDDDs = [
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "21",
+            "22",
+            "24",
+            "27",
+            "28",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "37",
+            "38",
+            "41",
+            "42",
+            "43",
+            "44",
+            "45",
+            "46",
+            "47",
+            "48",
+            "49",
+            "51",
+            "53",
+            "54",
+            "55",
+            "61",
+            "62",
+            "63",
+            "64",
+            "65",
+            "66",
+            "67",
+            "68",
+            "69",
+            "71",
+            "73",
+            "74",
+            "75",
+            "77",
+            "79",
+            "81",
+            "82",
+            "83",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "96",
+            "97",
+            "98",
+            "99",
+          ];
+
+          if (validDDDs.includes(ddd)) {
+            // Adicionar variação com 9
+            const withNine = phone.slice(0, 4) + "9" + phone.slice(4);
+            variations.push(withNine);
+            console.log(`📞 Variação com 9: ${withNine}`);
+
+            // Adicionar variação sem 9 (original)
+            variations.push(phone);
+            console.log(`📞 Variação sem 9: ${phone}`);
+          }
+        } else if (phone.length === 13) {
+          // Com o 9 do celular (55 + DDD + 9 + 8 dígitos)
+          console.log(`📞 Número com 9 detectado: ${phone}`);
+          // Adicionar variação com 9 (original)
+          variations.push(phone);
+          console.log(`📞 Variação com 9: ${phone}`);
+          // Adicionar variação sem 9
+          const withoutNine = phone.slice(0, 4) + phone.slice(5);
+          variations.push(withoutNine);
+          console.log(`📞 Variação sem 9: ${withoutNine}`);
+        }
+
+        // Adicionar variações únicas
+        variations.forEach((variation) => {
+          if (!foundNumbers.includes(variation)) {
+            foundNumbers.push(variation);
+            console.log(`✅ Número adicionado: ${variation}`);
+          }
+        });
+      }
+    });
+  });
+
+  console.log(`📱 Números finais encontrados: ${foundNumbers}`);
+  return foundNumbers;
+}
+
+// Função para enviar notificação via WhatsApp
+async function sendWhatsappNotification(phoneNumber, npcName) {
+  try {
+    console.log(`📱 Enviando notificação WhatsApp para ${phoneNumber}`);
+
+    // Mensagem de boas-vindas
+    const messageText = `Olá! Sou ${npcName} do Museu Vivo TJRO.
+
+É um prazer saber que você tem interesse em continuar nossa conversa! 
+
+Agora você pode me enviar mensagens aqui no WhatsApp a qualquer momento. Responderei com áudio, compartilhando minhas experiências e conhecimentos sobre a história do Tribunal de Justiça de Rondônia.
+
+Seja muito bem-vindo(a) ao nosso canal direto de comunicação!
+
+🏛️ Museu Vivo TJRO`;
+
+    const payload = {
+      phone: phoneNumber,
+      message: messageText,
+      founder_name: npcName,
+      founder_title: "Desembargador",
+    };
+
+    // Enviar requisição para o bot do WhatsApp
+    const response = await fetch(`${WHATSAPP_API_URL}/send-message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000), // 10 segundos timeout
+    });
+
+    if (response.ok) {
+      console.log(`✅ Mensagem WhatsApp enviada para ${phoneNumber}`);
+      return true;
+    } else {
+      console.log(`❌ Erro ao enviar WhatsApp: ${response.status}`);
+      return false;
+    }
+  } catch (error) {
+    console.log(`❌ Erro ao enviar notificação WhatsApp: ${error.message}`);
+    return false;
+  }
+}
+
 app.post("/npc-chat", async (req, res) => {
   const reqId = randomUUID().slice(0, 8);
   console.log(`[${reqId}] Recebendo requisição NPC chat`);
@@ -152,10 +356,43 @@ app.post("/npc-chat", async (req, res) => {
 
     console.log(`[${reqId}] NPC: ${npc_name}, User: ${user_text}`);
 
+    // Detectar números de WhatsApp na mensagem do usuário
+    const phoneNumbers = detectPhoneNumber(user_text);
+    let whatsappSent = false;
+
+    if (phoneNumbers.length > 0) {
+      console.log(
+        `[${reqId}] 📱 Números de WhatsApp detectados: ${phoneNumbers}`
+      );
+      for (const number of phoneNumbers) {
+        whatsappSent = await sendWhatsappNotification(number, npc_name);
+        if (whatsappSent) {
+          console.log(`[${reqId}] ✅ WhatsApp enviado para ${number}`);
+        } else {
+          console.log(`[${reqId}] ❌ Falha ao enviar WhatsApp para ${number}`);
+        }
+      }
+    }
+
+    // Preparar mensagens com contexto especial se WhatsApp foi detectado
+    let contextualMessages = [...messages];
+
+    if (phoneNumbers.length > 0) {
+      const whatsappContext = `
+ATENÇÃO: O usuário forneceu ${
+        phoneNumbers.length
+      } número(s) de WhatsApp: ${phoneNumbers.join(", ")}. 
+Responda agradecendo pelos números e informando que você enviará 
+mensagens de boas-vindas no WhatsApp deles. Seja cordial e 
+explique que agora vocês podem conversar por lá também.
+      `;
+      contextualMessages.push({ role: "system", content: whatsappContext });
+    }
+
     // Gerar resposta com OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages,
+      messages: contextualMessages,
       max_tokens: Math.min(max_tokens, MAX_BALAO),
     });
 
